@@ -28,17 +28,16 @@ public class FTPService {
 	
 	@PostConstruct
 	public void testConnection() throws IOException{
-		logger.info("Starting connection...123");
+		logger.info("Starting connection...12345");
 
-		//FTPSClient ftpClient = new FTPSClient("TLS", true);
-        FTPSClient ftpClient = new FTPSClient("TLS");
+		FTPSClient ftpClient = new FTPSClient("TLS", false);
+        //FTPSClient ftpClient = new FTPSClient("TLS");
         ftpClient.addProtocolCommandListener(new PrintCommandListener(new PrintWriter(System.out)));
         ftpClient.setDefaultTimeout(5*60*1000); // 4 minutes
         ftpClient.setDataTimeout(Duration.ofMillis(5*60*1000));
         ftpClient.setBufferSize(1024*1024);
         ftpClient.setConnectTimeout(5*60*1000);
-      //ftpClient.execPBSZ(0);
-      //ftpClient.execPROT("P");
+      
 
         String host = env.getProperty("ftp.host");
         String userName = env.getProperty("ftp.username");
@@ -47,10 +46,14 @@ public class FTPService {
 		ftpClient.enterLocalPassiveMode();
 		logger.info("Connecting to hoost {}", host);
 		ftpClient.connect(host, 21);
+		
+		ftpClient.execPBSZ(0);
+	    ftpClient.execPROT("P");
         ftpClient.enterLocalPassiveMode();
         ftpClient.login(userName, password);
-        logger.info("Logged in: status {}"+ftpClient.getStatus());
+        logger.info("Logged in status {}", ftpClient.getStatus());
         ftpClient.setFileType(FTP.BINARY_FILE_TYPE);
+        
         try {
             logger.info("&&&&&&&&&&&&&&&&&&&&Reading files...");
             FTPFile[] files = ftpClient.listFiles();
