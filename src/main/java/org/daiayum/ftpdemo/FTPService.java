@@ -1,10 +1,20 @@
 package org.daiayum.ftpdemo;
 
+import java.io.BufferedOutputStream;
+import java.io.File;
+import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.io.PrintWriter;
+import java.net.SocketException;
+import java.nio.file.FileSystems;
 import java.text.DateFormat;
 import java.text.SimpleDateFormat;
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
 
 import javax.annotation.PostConstruct;
 
@@ -26,7 +36,6 @@ public class FTPService {
 
 	Logger logger = LoggerFactory.getLogger(getClass());	
 	
-	@PostConstruct
 	public void testConnection() throws IOException{
 		logger.info("Starting connection...12345");
 
@@ -56,7 +65,7 @@ public class FTPService {
         
         try {
             logger.info("&&&&&&&&&&&&&&&&&&&&Reading files...");
-            FTPFile[] files = ftpClient.listFiles();
+            FTPFile[] files = ftpClient.listFiles("27747");
             logger.info("%%%%%%%%%%%%%%%%%%Read files: {}", files != null ? files.length : 0);
             
             if (files != null && files.length > 0) {
@@ -79,5 +88,84 @@ public class FTPService {
             ftpClient.logout();
             ftpClient.disconnect();        	
         }
+	}
+	
+	@PostConstruct
+	public void readFiles() {
+		
+		FTPSClient ftpClient = getFTPSClient(env.getProperty("ftp.host"), 21, env.getProperty("ftp.username"), env.getProperty("ftp.password"));
+		String[] caseNumbers = new String[] {"27747", "axsdrf", "27741"};
+		List<String> ignoredFiles = new ArrayList<>(Arrays.asList(".htaccess", ".htpasswd", ".directory"));
+		for (String caseNumber : caseNumbers) {
+			try {
+				FTPFile[] files = ftpClient.listFiles(caseNumber);
+				for (FTPFile file : files) {
+					if (!file.isDirectory()) {
+						if (!ignoredFiles.contains(file.getName())) {
+							logger.info("Reading file. Case Number {}. File Name: {}.", caseNumber, file.getName());
+							File tempFile = File.createTempFile(file.getName(), "");
+				            OutputStream outputStream = new BufferedOutputStream(new FileOutputStream(tempFile));
+				            InputStream inputStream = ftpClient.retrieveFileStream(caseNumber + "/" + file.getName());
+				            byte[] bytesArray = new byte[4096];
+				            int bytesRead = -1;
+				            while ((bytesRead = inputStream.read(bytesArray)) != -1) {
+				            	outputStream.write(bytesArray, 0, bytesRead);
+				            }
+				 
+				            boolean success = ftpClient.completePendingCommand();
+				            if (success) {
+				            	logger.info("Reading file completed. Case Number {}. File Name: {}.", caseNumber, file.getName());
+				            }
+				            outputStream.close();
+				            inputStream.close();
+						}
+					}
+				}
+				
+			} catch (IOException e) {
+				logger.warn("Error reading file for case number " + caseNumber+ ". Error: " + e.getMessage());				
+			}
+		}
+		
+		try {
+            if (ftpClient.isConnected()) {
+                ftpClient.logout();
+                ftpClient.disconnect();
+            }
+        } catch (IOException ex) {
+            ex.printStackTrace();
+        }
+	}
+	
+	public FTPSClient getFTPSClient(String server, int port, String userName, String password) {
+		FTPSClient ftpClient = new FTPSClient("TLS", false);
+        ftpClient.addProtocolCommandListener(new PrintCommandListener(new PrintWriter(System.out)));
+        ftpClient.setDefaultTimeout(5*60*1000); 				// 5 minutes
+        ftpClient.setDataTimeout(Duration.ofMillis(5*60*1000L));
+        ftpClient.setBufferSize(1024*1024);
+        ftpClient.setConnectTimeout(5*60*1000);
+		ftpClient.enterLocalPassiveMode();
+		logger.info("Connecting to FTP server {}", server);
+		try {
+			ftpClient.connect(server, port);
+			ftpClient.execPBSZ(0);
+		    ftpClient.execPROT("P");
+	        ftpClient.enterLocalPassiveMode();
+	        ftpClient.login(userName, password);
+	        logger.info("Login status: {}", ftpClient.getStatus());
+	        ftpClient.setFileType(FTP.BINARY_FILE_TYPE);
+		} catch (Exception e) {
+			try {
+                if (ftpClient.isConnected()) {
+                    ftpClient.logout();
+                    ftpClient.disconnect();
+                }
+            } catch (IOException ex) {
+                ex.printStackTrace();
+            }
+			throw new RuntimeException("Error connecting to FTP server. Error: {}" + e.getMessage());
+		}
+		
+        return ftpClient;
 	}
 }
